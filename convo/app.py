@@ -9,7 +9,8 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         print "Websocket Opened"
 
     def on_message(self, message):
-        self.send(message)
+        print "on message: %s" % message
+        self.write_message(message)
 
     def on_close(self):
         print "Socket Closed"
