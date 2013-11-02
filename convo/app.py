@@ -23,33 +23,47 @@ Message to client:
 """
 
 
+CLIENTS = []
+
+
 class ChatWebSocketServer(websocket.WebSocketHandler):
+
+    def __init__(self, *args, **kwargs):
+        self.message_handlers = {}
+        super(ChatWebSocketServer, self).__init__(*args, **kwargs)
 
     def open(self):
         # we should get all the items for this page
         # and dump them down the pipe when this opens.
         # how to tell
-        print "Websocket Opened"
+        CLIENTS.append(self)
+
+    def handle_message(self, obj):
+        message = obj.get('message', None)
+        if message is None:
+            raise TypeError("Message is required")
+        obj['timestamp'] = datetime.datetime.now().isoformat('-')
+        msg = json.dumps(message)
+        self.broadcast(msg)
+
+    def handle_gimme(self, obj):
+        self.write_message("Ok, here are comments for page.")
+
+    def broadcast(self, msg):
+        for c in CLIENTS:
+            c.write_message(msg)
 
     def on_message(self, message):
         try:
+
             obj = json.loads(message)
-            if 'urlhash' not in obj:
-                raise ValueError(
-                    "Invalid Type - IncomingMessage must have urlhash."
-                )
-            if 'email' not in obj:
-                raise ValueError(
-                    "Invalid Type - IncomingMessage must have email."
-                )
-            if 'message' not in obj:
-                raise ValueError(
-                    "Invalid Type - IncomingMessage must have message."
-                )
-            obj['timestamp'] = datetime.datetime.now().isoformat('-')
-            msg = json.dumps(message)
-            self.write_message(msg)
-            print "wrote %s"%msg
+            msg_type = obj.get('type', None)
+            if msg_type is None:
+                raise TypeError("All message must have type.")
+            handler_func = getattr(self, 'handle_%s' % msg_type, None)
+            if handler_func is None:
+                raise TypeError("No handler for %s type " % msg_type)
+            handler_func(obj)
         except ValueError, ve:
             print ve
 
