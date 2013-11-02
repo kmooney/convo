@@ -23,7 +23,7 @@ Message to client:
 """
 
 
-CLIENTS = []
+CLIENTS = {}
 
 
 class ChatWebSocketServer(websocket.WebSocketHandler):
@@ -36,14 +36,14 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         # we should get all the items for this page
         # and dump them down the pipe when this opens.
         # how to tell
-        CLIENTS.append(self)
+        CLIENTS[self] = self
 
     def handle_message(self, obj):
         message = obj.get('message', None)
         if message is None:
             raise TypeError("Message is required")
         obj['timestamp'] = datetime.datetime.now().isoformat('-')
-        msg = json.dumps(message)
+        msg = json.dumps(obj)
         self.broadcast(msg)
 
     def handle_gimme(self, obj):
@@ -51,11 +51,11 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
 
     def broadcast(self, msg):
         for c in CLIENTS:
-            c.write_message(msg)
+            if c is not None:
+                c.write_message(msg)
 
     def on_message(self, message):
         try:
-
             obj = json.loads(message)
             msg_type = obj.get('type', None)
             if msg_type is None:
@@ -68,6 +68,7 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
             print ve
 
     def on_close(self):
+        del CLIENTS[self]
         print "Socket Closed"
 
 app = tornado.web.Application([
