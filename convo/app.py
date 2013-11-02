@@ -1,8 +1,11 @@
 import tornado
+from tornado import gen
 from tornado import websocket
 from tornado import httpserver
 import json
 import datetime
+from tornado.web import asynchronous
+import tornadoredis
 
 
 """
@@ -25,29 +28,52 @@ Message to client:
 
 CLIENTS = {}
 
-
 class ChatWebSocketServer(websocket.WebSocketHandler):
 
     def __init__(self, *args, **kwargs):
+        self.redis = tornadoredis.Client()
         self.message_handlers = {}
+        print 'initialized'
         super(ChatWebSocketServer, self).__init__(*args, **kwargs)
 
     def open(self):
         # we should get all the items for this page
         # and dump them down the pipe when this opens.
         # how to tell
+        print 'opening'
+        self.redis.connect()
+        print self.redis.connection
+
         CLIENTS[self] = self
 
-    def handle_message(self, obj):
+    @gen.engine
+    def handle_message(self, obj, callback=None):
         message = obj.get('message', None)
+        urlhash = obj.get('urlhash', None)
         if message is None:
             raise TypeError("Message is required")
+        if urlhash is None:
+            raise TypeError("Urlhash is required")
         obj['timestamp'] = datetime.datetime.now().isoformat('-')
+        # stash the message, too.
         msg = json.dumps(obj)
+        print "RPUSH %s %s"%(urlhash, msg)
+        args = (urlhash, msg)
+        yield gen.Task(self.redis.rpush, *args)
         self.broadcast(msg)
 
-    def handle_gimme(self, obj):
-        self.write_message("Ok, here are comments for page.")
+    @gen.engine
+    def handle_gimme(self, obj, callback=None):
+        urlhash = obj.get('urlhash', None)
+        if urlhash is None:
+            raise TypeError("Urlhash is required")
+        print urlhash
+        args = (urlhash, 0, -1)
+        response = yield gen.Task(self.redis.lrange, *args)
+        # There has to be a better way...
+        response = json.dumps({"type": 'haidouzo', "objects": [json.loads(r) for r in response]})
+        self.write_message(response)
+
 
     def broadcast(self, msg):
         for c in CLIENTS:
@@ -55,6 +81,7 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
                 c.write_message(msg)
 
     def on_message(self, message):
+        print 'hadnling message'
         try:
             obj = json.loads(message)
             msg_type = obj.get('type', None)
@@ -69,6 +96,7 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
 
     def on_close(self):
         del CLIENTS[self]
+        self.redis.disconnect()
         print "Socket Closed"
 
 app = tornado.web.Application([
