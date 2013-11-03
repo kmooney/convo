@@ -4,7 +4,6 @@ from tornado import websocket
 from tornado import httpserver
 import json
 import datetime
-from tornado.web import asynchronous
 import tornadoredis
 
 
@@ -28,6 +27,7 @@ Message to client:
 
 CLIENTS = {}
 
+
 class ChatWebSocketServer(websocket.WebSocketHandler):
 
     def __init__(self, *args, **kwargs):
@@ -40,8 +40,6 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         # and dump them down the pipe when this opens.
         # how to tell
         self.redis.connect()
-        print self.redis.connection
-
         CLIENTS[self] = self
 
     @gen.engine
@@ -67,9 +65,11 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         args = (urlhash, 0, -1)
         response = yield gen.Task(self.redis.lrange, *args)
         # There has to be a better way...
-        response = json.dumps({"type": 'haidouzo', "objects": [json.loads(r) for r in response]})
+        response = json.dumps({
+            "type": 'haidouzo',
+            "objects": [json.loads(r) for r in response]
+        })
         self.write_message(response)
-
 
     def broadcast(self, msg):
         for c in CLIENTS:
