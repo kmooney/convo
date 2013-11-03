@@ -12,14 +12,14 @@ import tornadoredis
 Incoming Message:
 {
    urlhash: <<md5 of url>>
-   email: "kmooney@gmail.com",
+   emailhash: "xyz123abczzz", // used for gravatar - original email not stored.
    message: "Hey, this is a test of the comment system.  Convo."
 }
 
 Message to client:
 {
    urlhash: <<md5 of url>>
-   email: "kmooney@gmail.com",
+   emailhash: "xyz123abczzz",
    message: "Hey, this is a test of the comment system.  Convo.",
    timestamp: "2013-10-31T20:30:00"
 }
@@ -33,14 +33,12 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
         self.redis = tornadoredis.Client()
         self.message_handlers = {}
-        print 'initialized'
         super(ChatWebSocketServer, self).__init__(*args, **kwargs)
 
     def open(self):
         # we should get all the items for this page
         # and dump them down the pipe when this opens.
         # how to tell
-        print 'opening'
         self.redis.connect()
         print self.redis.connection
 
@@ -57,7 +55,6 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         obj['timestamp'] = datetime.datetime.now().isoformat('-')
         # stash the message, too.
         msg = json.dumps(obj)
-        print "RPUSH %s %s"%(urlhash, msg)
         args = (urlhash, msg)
         yield gen.Task(self.redis.rpush, *args)
         self.broadcast(msg)
@@ -67,7 +64,6 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
         urlhash = obj.get('urlhash', None)
         if urlhash is None:
             raise TypeError("Urlhash is required")
-        print urlhash
         args = (urlhash, 0, -1)
         response = yield gen.Task(self.redis.lrange, *args)
         # There has to be a better way...
@@ -81,7 +77,6 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
                 c.write_message(msg)
 
     def on_message(self, message):
-        print 'hadnling message'
         try:
             obj = json.loads(message)
             msg_type = obj.get('type', None)
@@ -97,7 +92,6 @@ class ChatWebSocketServer(websocket.WebSocketHandler):
     def on_close(self):
         del CLIENTS[self]
         self.redis.disconnect()
-        print "Socket Closed"
 
 app = tornado.web.Application([
     (r'/chat', ChatWebSocketServer),
